@@ -5,6 +5,52 @@ performance patch applied. Run `yarn install` with lifecycle
 scripts enabled; `--ignore-scripts` skips that patch and the build will fail
 until it is applied. `yarn test:redux-sync` checks the state transport.
 
+## Building with authenticated location metadata
+
+The normal build logs in and downloads its location list. If the API requires
+an interactive CAPTCHA or two-factor authentication, that build-time login
+cannot complete. A developer can instead sign in normally in an isolated
+Windscribe extension profile, export only the location fields used by the
+warp generators, and provide the local file:
+
+```sh
+BUILD_LOCATIONS_FILE=/private/path/windscribe-build-locations.json yarn build
+```
+
+The loader validates IDs, country codes, time zones, and coordinates, and
+discards all other fields. This option does not authenticate the built
+extension or change its runtime authentication. The default build behavior
+is unchanged when the variable is absent. The list can become stale, so
+refresh it from a current, legitimately signed-in account before rebuilding.
+Keep the exported file local and out of version control.
+
+To export the metadata, inspect the signed-in extension popup and run the
+following in that popup's DevTools Console. It saves only location IDs,
+country codes, time zones, datacenter IDs, and coordinates; it does not print
+or save the rest of the Redux state.
+
+```js
+void (async () => {
+  const list = (await chrome.runtime.sendMessage({
+    type: 'chromex.fetch_state',
+    portName: 'WS_BROWSER_EXTENSION_STORE',
+  }))?.payload?.servers?.serverList
+  if (!Array.isArray(list) || list.length === 0) throw new Error('Location list is not ready')
+  const data = list.map(location => ({
+    id: location.id,
+    country_code: location.country_code,
+    tz: location.tz,
+    groups: (location.groups || []).map(group => ({ id: group.id, gps: group.gps })),
+  }))
+  const url = URL.createObjectURL(new Blob([JSON.stringify({ data })], { type: 'application/json' }))
+  const link = Object.assign(document.createElement('a'), { href: url, download: 'windscribe-build-locations.json' })
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+})()
+```
+
 What `yarn build` does, how webpack is configured, and how content scripts
 get generated at build time.
 

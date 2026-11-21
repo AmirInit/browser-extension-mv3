@@ -15,6 +15,7 @@
     "test": "yarn mocha -n import=tsx tests/e2e/tests.ts --timeout 50000",
     "test:local": "DOTENV_CONFIG_PATH=./.env.local yarn mocha -n import=tsx tests/e2e/tests.ts --timeout 50000",
     "test:redux-sync": "node --test tests/unit/*.test.cjs",
+    "test:build-locations": "node --test tests/unit/buildLocations.test.cjs",
     "benchmark:redux-sync": "node tests/performance/reduxBroadcast.bench.cjs",
     "benchmark:redux-browser": "node tests/performance/browserReduxBench.cjs",
     "typecheck:tests": "tsc -p tests/tsconfig.json",

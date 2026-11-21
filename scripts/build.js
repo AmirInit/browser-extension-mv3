@@ -4,6 +4,7 @@ require('./verifyReduxBroadcastPatch')
 const login = require('./login')
 const getUserAgents = require('./getUa')
 const getLocations = require('./getLocations')
+const loadBuildLocations = require('./loadBuildLocations')
 
 const validateEmbeddedUserAgents = require('./buildUtils/outputValidators/validateEmbeddedUserAgents')
 const validateEmbeddedLocationWarp = require('./buildUtils/outputValidators/validateEmbeddedLocationWarp')
@@ -21,9 +22,10 @@ delete config.chromeExtensionBoilerplate
 ;(async () => {
   config.mode = 'production'
 
-  const sessionData = await login()
   const userAgents = getUserAgents()
-  const serverListData = await getLocations(sessionData)
+  const serverListData = process.env.BUILD_LOCATIONS_FILE
+    ? loadBuildLocations(process.env.BUILD_LOCATIONS_FILE)
+    : await getLocations(await login())
 
   await embedUserAgentsForSplitPersonality(config, userAgents)
   await embedLocationWarp(config, serverListData)
