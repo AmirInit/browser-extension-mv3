@@ -1,0 +1,211 @@
+diff --git a/docs/build-system.md b/docs/build-system.md
+index e02da8f..6da9e3a 100644
+--- a/docs/build-system.md
++++ b/docs/build-system.md
+@@ -5,6 +5,52 @@ performance patch applied. Run `yarn install` with lifecycle
+ scripts enabled; `--ignore-scripts` skips that patch and the build will fail
+ until it is applied. `yarn test:redux-sync` checks the state transport.
+ 
++## Building with authenticated location metadata
++
++The normal build logs in and downloads its location list. If the API requires
++an interactive CAPTCHA or two-factor authentication, that build-time login
++cannot complete. A developer can instead sign in normally in an isolated
++Windscribe extension profile, export only the location fields used by the
++warp generators, and provide the local file:
++
++```sh
++BUILD_LOCATIONS_FILE=/private/path/windscribe-build-locations.json yarn build
++```
++
++The loader validates IDs, country codes, time zones, and coordinates, and
++discards all other fields. This option does not authenticate the built
++extension or change its runtime authentication. The default build behavior
++is unchanged when the variable is absent. The list can become stale, so
++refresh it from a current, legitimately signed-in account before rebuilding.
++Keep the exported file local and out of version control.
++
++To export the metadata, inspect the signed-in extension popup and run the
++following in that popup's DevTools Console. It saves only location IDs,
++country codes, time zones, datacenter IDs, and coordinates; it does not print
++or save the rest of the Redux state.
++
++```js
++void (async () => {
++  const list = (await chrome.runtime.sendMessage({
++    type: 'chromex.fetch_state',
++    portName: 'WS_BROWSER_EXTENSION_STORE',
++  }))?.payload?.servers?.serverList
++  if (!Array.isArray(list) || list.length === 0) throw new Error('Location list is not ready')
++  const data = list.map(location => ({
++    id: location.id,
++    country_code: location.country_code,
++    tz: location.tz,
++    groups: (location.groups || []).map(group => ({ id: group.id, gps: group.gps })),
++  }))
++  const url = URL.createObjectURL(new Blob([JSON.stringify({ data })], { type: 'application/json' }))
++  const link = Object.assign(document.createElement('a'), { href: url, download: 'windscribe-build-locations.json' })
++  document.body.appendChild(link)
++  link.click()
++  link.remove()
++  setTimeout(() => URL.revokeObjectURL(url), 1000)
++})()
++```
++
+ What `yarn build` does, how webpack is configured, and how content scripts
+ get generated at build time.
+ 
+diff --git a/package.json b/package.json
+index 0ae72a7..38c91be 100755
+--- a/package.json
++++ b/package.json
+@@ -15,6 +15,7 @@
+     "test": "yarn mocha -n import=tsx tests/e2e/tests.ts --timeout 50000",
+     "test:local": "DOTENV_CONFIG_PATH=./.env.local yarn mocha -n import=tsx tests/e2e/tests.ts --timeout 50000",
+     "test:redux-sync": "node --test tests/unit/*.test.cjs",
++    "test:build-locations": "node --test tests/unit/buildLocations.test.cjs",
+     "benchmark:redux-sync": "node tests/performance/reduxBroadcast.bench.cjs",
+     "benchmark:redux-browser": "node tests/performance/browserReduxBench.cjs",
+     "typecheck:tests": "tsc -p tests/tsconfig.json",
+diff --git a/scripts/build.js b/scripts/build.js
+index 4e9926b..e5afbc3 100755
+--- a/scripts/build.js
++++ b/scripts/build.js
+@@ -4,6 +4,7 @@ require('./verifyReduxBroadcastPatch')
+ const login = require('./login')
+ const getUserAgents = require('./getUa')
+ const getLocations = require('./getLocations')
++const loadBuildLocations = require('./loadBuildLocations')
+ 
+ const validateEmbeddedUserAgents = require('./buildUtils/outputValidators/validateEmbeddedUserAgents')
+ const validateEmbeddedLocationWarp = require('./buildUtils/outputValidators/validateEmbeddedLocationWarp')
+@@ -21,9 +22,10 @@ delete config.chromeExtensionBoilerplate
+ ;(async () => {
+   config.mode = 'production'
+ 
+-  const sessionData = await login()
+   const userAgents = getUserAgents()
+-  const serverListData = await getLocations(sessionData)
++  const serverListData = process.env.BUILD_LOCATIONS_FILE
++    ? loadBuildLocations(process.env.BUILD_LOCATIONS_FILE)
++    : await getLocations(await login())
+ 
+   await embedUserAgentsForSplitPersonality(config, userAgents)
+   await embedLocationWarp(config, serverListData)
+diff --git a/scripts/loadBuildLocations.js b/scripts/loadBuildLocations.js
+new file mode 100644
+index 0000000..bfc2465
+--- /dev/null
++++ b/scripts/loadBuildLocations.js
+@@ -0,0 +1,61 @@
++const fs = require('fs')
++const locales = require('./buildUtils/constants/locales')
++
++// Accept only the fields consumed by the warp generators. In particular,
++// never propagate account data, proxy credentials, or API tokens into a build.
++function loadBuildLocations(file) {
++  const parsed = JSON.parse(fs.readFileSync(file, 'utf8'))
++  if (!Array.isArray(parsed?.data) || parsed.data.length === 0) {
++    throw new Error('Build locations must contain a non-empty data array')
++  }
++  const locationIds = new Set()
++  const datacenterIds = new Set()
++  const data = parsed.data.map(location => {
++    if (!Number.isSafeInteger(location?.id) || location.id <= 0 || locationIds.has(location.id)) {
++      throw new Error('Invalid or duplicate location ID in build locations')
++    }
++    locationIds.add(location.id)
++    const countryCode = location.country_code ?? 'AUTO'
++    if (typeof countryCode !== 'string' || !Object.hasOwn(locales, countryCode)) {
++      throw new Error('Unknown country code in build locations')
++    }
++    const tz = location.tz
++    if (tz != null) {
++      if (typeof tz !== 'string' || !/^[A-Za-z0-9_+.-]+(?:\/[A-Za-z0-9_+.-]+)+$/.test(tz)) {
++        throw new Error('Invalid timezone in build locations')
++      }
++      try {
++        new Intl.DateTimeFormat('en', { timeZone: tz })
++      } catch (_) {
++        throw new Error('Unknown timezone in build locations')
++      }
++    }
++    if (location.groups != null && !Array.isArray(location.groups)) {
++      throw new Error('Invalid datacenter list in build locations')
++    }
++    const groups = (location.groups ?? []).map(group => {
++      if (!Number.isSafeInteger(group?.id) || group.id <= 0 || datacenterIds.has(group.id)) {
++        throw new Error('Invalid or duplicate datacenter ID in build locations')
++      }
++      datacenterIds.add(group.id)
++      let gps = group.gps
++      if (gps != null) {
++        if (typeof gps !== 'string') throw new Error('Invalid coordinates in build locations')
++        const parts = gps.split(',')
++        if (parts.length !== 2 || !parts.every(x => /^\s*[+-]?\d+(?:\.\d+)?\s*$/.test(x))) {
++          throw new Error('Invalid coordinates in build locations')
++        }
++        const [latitude, longitude] = parts.map(Number)
++        if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {
++          throw new Error('Coordinates out of range in build locations')
++        }
++        gps = `${latitude},${longitude}`
++      }
++      return { id: group.id, ...(gps == null ? {} : { gps }) }
++    })
++    return { id: location.id, country_code: countryCode, ...(tz == null ? {} : { tz }), groups }
++  })
++  return { data }
++}
++
++module.exports = loadBuildLocations
+diff --git a/tests/unit/buildLocations.test.cjs b/tests/unit/buildLocations.test.cjs
+new file mode 100644
+index 0000000..45bc02a
+--- /dev/null
++++ b/tests/unit/buildLocations.test.cjs
+@@ -0,0 +1,44 @@
++const assert = require('node:assert/strict')
++const fs = require('node:fs')
++const os = require('node:os')
++const path = require('node:path')
++const { test } = require('node:test')
++const loadBuildLocations = require('../../scripts/loadBuildLocations')
++
++test('validated build locations retain only warp metadata and reject unsafe input', t => {
++  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'windscribe-build-locations-test-'))
++  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
++  const file = path.join(root, 'locations.json')
++  const good = {
++    data: [
++      {
++        id: 1,
++        country_code: 'US',
++        tz: 'America/New_York',
++        groups: [{ id: 2, gps: '40.7,-74.0', password: 'must-not-be-retained' }],
++        token: 'must-not-be-retained',
++      },
++    ],
++  }
++  const write = value => fs.writeFileSync(file, JSON.stringify(value))
++  write(good)
++  assert.deepEqual(loadBuildLocations(file), {
++    data: [
++      { id: 1, country_code: 'US', tz: 'America/New_York', groups: [{ id: 2, gps: '40.7,-74' }] },
++    ],
++  })
++
++  for (const bad of [
++    { data: [] },
++    { data: [{ ...good.data[0], id: -1 }] },
++    { data: [{ ...good.data[0], country_code: '__proto__' }] },
++    { data: [{ ...good.data[0], tz: "America/New_York');alert(1)//" }] },
++    { data: [{ ...good.data[0], tz: 'Unknown/Invalid' }] },
++    { data: [{ ...good.data[0], groups: [{ id: 2, gps: '91,0' }] }] },
++    { data: [{ ...good.data[0], groups: [{ id: 2, gps: '1,2);alert(1)' }] }] },
++    { data: [good.data[0], good.data[0]] },
++  ]) {
++    write(bad)
++    assert.throws(() => loadBuildLocations(file))
++  }
++})

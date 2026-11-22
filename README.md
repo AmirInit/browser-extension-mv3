@@ -1,5 +1,7 @@
 # Windscribe Browser Extension (Manifest V3)
 
+For this fork’s unofficial patched builds, see [community releases](docs/community-releases.md). These builds are not affiliated with or endorsed by Windscribe.
+
 Chrome/Edge extension that exposes the Windscribe VPN as an HTTPS proxy, plus
 privacy tools (split personality, anti-fingerprinting, language / location /
 timezone warps) and uBlock Origin Lite as a built-in ad /

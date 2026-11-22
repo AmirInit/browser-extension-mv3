@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "permissions": [
+    "activeTab",
+    "contextMenus",
+    "declarativeNetRequestWithHostAccess",
+    "privacy",
+    "proxy",
+    "notifications",
+    "scripting",
+    "storage",
+    "tabs",
+    "webRequest",
+    "webRequestAuthProvider",
+    "management",
+    "alarms",
+    "offscreen",
+    "unlimitedStorage"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "optional_permissions": [
+    "browsingData",
+    "contentSettings"
+  ],
+  "optional_host_permissions": []
+}
