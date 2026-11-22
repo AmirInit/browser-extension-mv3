@@ -103,6 +103,12 @@ jobs:
             --workdir /work "$IMAGE" bash /pipeline/install-in-sandbox.sh
           python3 control/automation/audit.py "$GITHUB_WORKSPACE/candidate/.community-ci/audit.jsonl" "$RUNNER_TEMP/community-audit.json"
           if [[ $(cat "$GITHUB_WORKSPACE/candidate/.community-ci/mode") == equivalent-probe ]]; then
+            docker run --rm --network none --user "$(id -u):$(id -g)" --cap-drop ALL \
+              --security-opt no-new-privileges --pids-limit 1024 --memory 6g --cpus 2 \
+              --env NODE_PATH=/work/node_modules \
+              --mount "type=bind,src=$GITHUB_WORKSPACE/candidate,dst=/work" \
+              --mount "type=bind,src=$GITHUB_WORKSPACE/control/automation,dst=/pipeline,readonly" \
+              --workdir /work "$IMAGE" node --test /pipeline/fixtures/tests/unit/reduxBroadcast.test.cjs
             python3 control/automation/prepare.py finish-equivalent "$GITHUB_WORKSPACE/candidate"
           fi
       - name: Test and build with network access disabled
