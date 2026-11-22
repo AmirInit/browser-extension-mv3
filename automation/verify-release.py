@@ -6,7 +6,17 @@ import os
 from pathlib import Path
 import sys
 
-release = json.loads(Path(sys.argv[1]).read_text())
+result = json.loads(Path(sys.argv[1]).read_text())
+if isinstance(result, list):
+    # The tag endpoint only returns published releases; drafts are listed to
+    # authorized writers. --paginate --slurp gives a list of pages.
+    releases = [release for page in result for release in (page if isinstance(page, list) else [page])]
+    matches = [release for release in releases if release.get('tag_name') == os.environ['RELEASE_TAG']]
+    if len(matches) != 1:
+        raise SystemExit('Could not uniquely identify the draft release')
+    release = matches[0]
+else:
+    release = result
 folder = Path(sys.argv[2])
 want_draft = sys.argv[3] == 'draft'
 if release.get('tag_name') != os.environ['RELEASE_TAG'] or release.get('draft') is not want_draft or release.get('prerelease') is not True:

@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from email.utils import format_datetime
 import json
+import hashlib
 import os
 from pathlib import Path
 import subprocess
@@ -133,6 +134,24 @@ class ArtifactTests(unittest.TestCase):
             with zipfile.ZipFile(file, 'w') as z:
                 z.writestr('../escape', 'x')
             with self.assertRaises(ValueError): validate_zip(file, '4.3.1')
+
+    def test_draft_release_is_verified_from_paginated_list(self):
+        script = Path(__file__).resolve().parents[1] / 'verify-release.py'
+        with tempfile.TemporaryDirectory() as root:
+            folder = Path(root)
+            names = ('windscribe-community.zip', 'SHA256SUMS', 'CHANGELOG.md', 'BUILD-INFO.json')
+            assets = []
+            for name in names:
+                data = ('contents-' + name).encode()
+                (folder / name).write_bytes(data)
+                assets.append({'name': name, 'size': len(data), 'digest': 'sha256:' + hashlib.sha256(data).hexdigest(), 'state': 'uploaded'})
+            release = {'tag_name': 'v4.3.1-wsfix.1', 'draft': True, 'prerelease': True, 'assets': assets}
+            datafile = folder / 'pages.json'
+            datafile.write_text(json.dumps([[{'tag_name': 'unrelated'}, release], []]))
+            env = {**os.environ, 'RELEASE_TAG': 'v4.3.1-wsfix.1'}
+            self.assertEqual(subprocess.run([sys.executable, str(script), str(datafile), str(folder), 'draft'], env=env, capture_output=True).returncode, 0)
+            datafile.write_text(json.dumps([[release, release]]))
+            self.assertNotEqual(subprocess.run([sys.executable, str(script), str(datafile), str(folder), 'draft'], env=env, capture_output=True).returncode, 0)
 
     def test_incomplete_or_critical_audit_blocks(self):
         script = Path(__file__).resolve().parents[1] / 'audit.py'

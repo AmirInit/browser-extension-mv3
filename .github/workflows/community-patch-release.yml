@@ -197,8 +197,10 @@ jobs:
             "$RUNNER_TEMP/verified-release/SHA256SUMS" \
             "$RUNNER_TEMP/verified-release/CHANGELOG.md" \
             "$RUNNER_TEMP/verified-release/BUILD-INFO.json"
-          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > "$RUNNER_TEMP/release.json"
-          python3 automation/verify-release.py "$RUNNER_TEMP/release.json" "$RUNNER_TEMP/verified-release" draft
+          # GitHub's by-tag endpoint only returns published releases. List
+          # releases using the write token to locate and verify this draft.
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$RUNNER_TEMP/draft-releases.json"
+          python3 automation/verify-release.py "$RUNNER_TEMP/draft-releases.json" "$RUNNER_TEMP/verified-release" draft
           gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease
           gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > "$RUNNER_TEMP/release-published.json"
           python3 automation/verify-release.py "$RUNNER_TEMP/release-published.json" "$RUNNER_TEMP/verified-release" published
