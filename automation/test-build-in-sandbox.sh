@@ -22,5 +22,18 @@ node /pipeline/fixtures/tests/performance/reduxBroadcast.bench.cjs | tee .commun
 const fs=require('fs'); const a=fs.readFileSync('.community-ci/benchmark.jsonl','utf8').trim().split('\n').map(JSON.parse)
 for(const n of [100,1000,3000]) { const x=a.find(y=>y.tabCount===n); if(!x || x.tabQueries!==0 || x.tabMessages!==0 || x.runtimeBroadcasts!==21) throw new Error('Redux scaling regression for '+n+' tabs') }
 JS
+# dotenv-webpack does not import process environment variables by default.
+# The file contains public runtime configuration only, never credentials.
+if [[ -e .env || -L .env ]]; then echo 'Unexpected candidate .env; refusing to overwrite it' >&2; exit 1; fi
+previous_umask=$(umask)
+umask 077
+cat > .env <<'EOF'
+NODE_ENV=production
+API_URL=windscribe.com
+BACKUP_API_URL=totallyacdn.com
+BROWSER=Chrome
+REACT_APP_REDUX_PORT=WS_BROWSER_EXTENSION_STORE
+EOF
+umask "$previous_umask"
 yarn build 2>&1 | tee .community-ci/build.log
 node /pipeline/check-build-output.cjs .community-ci/build.log

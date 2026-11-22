@@ -40,6 +40,13 @@ permissions, incompatible patch contexts, or an incomplete audit require manual
 review. The current uBO commit is kept as-is; future uBO changes require the
 checklist in the upstream repository's `docs/ubo-lite-mirror.md`.
 
+The build writes a temporary `.env` containing only the public production API
+and fallback domains, browser type, and Redux port. This is necessary because
+upstream's webpack plugin does not import shell variables by default. The
+archive and publisher independently check the compiled bundles for the
+production domains and reject a staging or missing configuration. The file
+contains no credentials and is not included in the release.
+
 Build-time warp metadata comes from Windscribe's publicly accessible Chrome
 location endpoints on its official primary CDN or documented fallback. The
 pipeline fetches the free and Pro lists, retains only IDs, country codes, time

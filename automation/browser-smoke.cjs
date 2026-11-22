@@ -60,8 +60,8 @@ async function main() {
     assert.equal(manifest.proxy && manifest.webrtc && manifest.dnr, true)
     await retry(async () => (await page.evaluate(async () => {
       const result = await chrome.runtime.sendMessage({ type: 'chromex.fetch_state', portName: 'WS_BROWSER_EXTENSION_STORE' })
-      return !!result && typeof result.payload === 'object' && result.payload !== null
-    })), 'initial Redux state')
+      return !!result && typeof result.payload === 'object' && result.payload !== null && result.payload.workingApi === 'windscribe.com'
+    })), 'initial production Redux state')
     const rules = await page.evaluate(() => chrome.declarativeNetRequest.getEnabledRulesets())
     assert.ok(rules.length > 0, 'no filtering rulesets enabled')
 
@@ -83,10 +83,10 @@ async function main() {
     await retry(() => stopped, 'service-worker shutdown', 20000)
     await retry(async () => (await page.evaluate(async () => {
       const result = await chrome.runtime.sendMessage({ type: 'chromex.fetch_state', portName: 'WS_BROWSER_EXTENSION_STORE' })
-      return !!result && typeof result.payload === 'object' && result.payload !== null
-    })), 'Redux state after service-worker restart')
+      return !!result && typeof result.payload === 'object' && result.payload !== null && result.payload.workingApi === 'windscribe.com'
+    })), 'production Redux state after service-worker restart')
     await retry(() => restarted, 'service-worker reactivation', 30000)
-    console.log(`Offline built-extension smoke passed: MV3 ${manifest.version}, popup and Redux state, ${rules.length} enabled rulesets, worker stopped and reactivated`)
+    console.log(`Offline built-extension smoke passed: MV3 ${manifest.version}, popup and production Redux state, ${rules.length} enabled rulesets, worker stopped and reactivated`)
   } finally {
     if (browser) await browser.close()
     fs.rmSync(tmp, { recursive: true, force: true })

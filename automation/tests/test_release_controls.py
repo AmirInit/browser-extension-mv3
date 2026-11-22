@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import relevant_fingerprint, version_ok
 from detect import choose, select_official_candidate
 from locations import check_fresh, sanitize
-from artifacts import safe_name, source_file, validate_zip
+from artifacts import check_runtime_config, safe_name, source_file, validate_zip
 from prepare import finish_equivalent
 
 
@@ -134,6 +134,20 @@ class ArtifactTests(unittest.TestCase):
             with zipfile.ZipFile(file, 'w') as z:
                 z.writestr('../escape', 'x')
             with self.assertRaises(ValueError): validate_zip(file, '4.3.1')
+
+    def test_compiled_bundles_must_use_production_api_and_fallback(self):
+        good = b'const x="windscribe.com",y="totallyacdn.com",z="dynamic-api-host.windscribe.com"'
+        offscreen = b'name:"workingApi",initialState:"windscribe.com"'
+        bundles = {'background.bundle.js': good, 'popup.bundle.js': good, 'offscreenHub.bundle.js': offscreen}
+        check_runtime_config(bundles.__getitem__)
+        bundles['background.bundle.js'] = b'API_URL:"MISSING_ENV_VAR".API_URL||"staging.windscribe.com"'
+        with self.assertRaises(ValueError): check_runtime_config(bundles.__getitem__)
+        bundles['background.bundle.js'] = good
+        bundles['popup.bundle.js'] = b'const x="windscribe.com",y="wrong.example",z="dynamic-api-host.windscribe.com"'
+        with self.assertRaises(ValueError): check_runtime_config(bundles.__getitem__)
+        bundles['popup.bundle.js'] = good
+        bundles['offscreenHub.bundle.js'] = b'name:"workingApi",initialState:"staging.windscribe.com"'
+        with self.assertRaises(ValueError): check_runtime_config(bundles.__getitem__)
 
     def test_generated_script_validator_errors_fail_closed(self):
         script = Path(__file__).resolve().parents[1] / 'check-build-output.cjs'

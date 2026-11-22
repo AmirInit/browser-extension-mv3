@@ -102,6 +102,24 @@ def policy_check(manifest, version, names):
         raise ValueError('missing required extension resources: ' + repr(missing[:8]))
 
 
+def check_runtime_config(read):
+    # The production minifier folds ENVS into adjacent variables and can
+    # eliminate values unused by offscreen code. Verify both compiled forms.
+    identifier = r'[A-Za-z_$][A-Za-z0-9_$]*'
+    q = r'["\']'
+    production = (r'=\s*' + q + r'windscribe\.com' + q + r'\s*,\s*' + identifier +
+                  r'\s*=\s*' + q + r'totallyacdn\.com' + q + r'\s*,\s*' + identifier +
+                  r'\s*=\s*' + q + r'dynamic-api-host\.windscribe\.com' + q)
+    offscreen = r'name\s*:\s*' + q + r'workingApi' + q + r'\s*,\s*initialState\s*:\s*' + q + r'windscribe\.com' + q
+    for name in ('background.bundle.js', 'popup.bundle.js', 'offscreenHub.bundle.js'):
+        content = read(name).decode('utf8')
+        pattern = offscreen if name == 'offscreenHub.bundle.js' else production
+        if not re.search(pattern, content):
+            raise ValueError('production runtime API configuration missing in ' + name)
+        if re.search(q + r'MISSING_ENV_VAR' + q + r'\s*\.\s*(?:API_URL|BACKUP_API_URL)\b', content):
+            raise ValueError('unresolved runtime environment in ' + name)
+
+
 def check_generated(names, locations, useragents):
     def digest(value): return hashlib.sha256(str(value).encode()).hexdigest()
     expected = set()
@@ -128,6 +146,7 @@ def validate_zip(path, version):
         if sum(i.file_size for i in infos) > MAX_TOTAL or any(i.file_size > MAX_FILE or i.is_dir() or stat.S_ISLNK(i.external_attr >> 16) for i in infos):
             raise ValueError('unsafe ZIP type or size')
         policy_check(json.loads(z.read('manifest.json')), version, names)
+        check_runtime_config(z.read)
         for info in infos:
             with z.open(info) as f:
                 while f.read(1024 * 1024): pass  # CRC-check all entries without extracting.
@@ -164,6 +183,7 @@ def package(source, out, location_path, audit_path):
     if manifest != json.loads(source_file(source, 'src/manifest.json').read_text()):
         raise ValueError('built manifest differs from source manifest')
     policy_check(manifest, data['version'], names)
+    check_runtime_config(lambda name: files[name].read_bytes())
     check_generated(names, json.loads(Path(location_path).read_text()), source_file(source, 'useragents.txt').read_text())
     for item in manifest['declarative_net_request']['rule_resources']:
         parsed = json.loads(files[item['path'].lstrip('/')].read_bytes())
@@ -200,7 +220,7 @@ def package(source, out, location_path, audit_path):
 
 def changelog(data):
     comparison = ('https://github.com/Windscribe/browser-extension-mv3/compare/' + data['previous_sha'] + '...' + data['upstream_sha']) if data.get('previous_sha') else 'Initial community release; no previous community build.'
-    return f'''# {LABEL}\n\nWindscribe {data['version']} community prerelease. This is not an official Windscribe distribution.\n\n- Official source: https://github.com/Windscribe/browser-extension-mv3/commit/{data['upstream_sha']}\n- Upstream changes: {comparison}\n- Redux performance patch: https://github.com/AmirInit/browser-extension-mv3/commit/{PERFORMANCE_COMMIT}\n- Authenticated location build tooling: https://github.com/AmirInit/browser-extension-mv3/commit/{BUILD_SUPPORT_COMMIT}\n- Pipeline commit: {data['pipeline_sha']}\n- Build run: {data['run_url']}\n- Redux integration: {data['redux_integration']}; reviewed uBO commit: {UBO_COMMIT}\n- Dependency audit: {json.dumps(data['audit_summary'], sort_keys=True)}\n- Package SHA-256: `{data['archive_sha256']}`\n\nThe Redux transport is regression-tested at simulated 100, 1,000, and 3,000-tab workloads. An offline Chrome for Testing 131 smoke opens the actual built popup, checks Redux and enabled filtering rulesets, and stops and reactivates its MV3 worker. The official fresh public Chrome location metadata is validated at build time. **Security warning:** the full dependency audit reports {data['audit_summary']['high']} high-severity finding occurrences; distinct advisory IDs are in BUILD-INFO.json. Non-critical findings remain.\n\nAutomated tests do not establish authenticated connectivity, leak protection, or complete privacy/security. This build is unsigned and does not auto-update. Test it in a separate browser profile before considering an update. Extension settings and sign-in are separate if the extension ID changes.\n\nInstallation, updating without replacing an existing profile, and rollback: https://github.com/AmirInit/browser-extension-mv3/blob/public/docs/community-releases.md\n'''
+    return f'''# {LABEL}\n\nWindscribe {data['version']} community prerelease. This is not an official Windscribe distribution.\n\n- Official source: https://github.com/Windscribe/browser-extension-mv3/commit/{data['upstream_sha']}\n- Upstream changes: {comparison}\n- Redux performance patch: https://github.com/AmirInit/browser-extension-mv3/commit/{PERFORMANCE_COMMIT}\n- Authenticated location build tooling: https://github.com/AmirInit/browser-extension-mv3/commit/{BUILD_SUPPORT_COMMIT}\n- Pipeline commit: {data['pipeline_sha']}\n- Build run: {data['run_url']}\n- Redux integration: {data['redux_integration']}; reviewed uBO commit: {UBO_COMMIT}\n- Dependency audit: {json.dumps(data['audit_summary'], sort_keys=True)}\n- Package SHA-256: `{data['archive_sha256']}`\n\nThe Redux transport is regression-tested at simulated 100, 1,000, and 3,000-tab workloads. The compiled extension is checked for the production Windscribe API and fallback domain. An offline Chrome for Testing 131 smoke opens the actual built popup, checks Redux and enabled filtering rulesets, and stops and reactivates its MV3 worker. The official fresh public Chrome location metadata is validated at build time. **Security warning:** the full dependency audit reports {data['audit_summary']['high']} high-severity finding occurrences; distinct advisory IDs are in BUILD-INFO.json. Non-critical findings remain.\n\nAutomated tests do not establish authenticated connectivity, leak protection, or complete privacy/security. This build is unsigned and does not auto-update. Test it in a separate browser profile before considering an update. Extension settings and sign-in are separate if the extension ID changes.\n\nInstallation, updating without replacing an existing profile, and rollback: https://github.com/AmirInit/browser-extension-mv3/blob/public/docs/community-releases.md\n'''
 
 
 def validate_envelope(envelope, out):
