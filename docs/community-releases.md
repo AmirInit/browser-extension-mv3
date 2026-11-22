@@ -63,7 +63,8 @@ workflow failed.
 
 Dependency installation uses a frozen lockfile and disables lifecycle scripts.
 Upstream build and test code runs in a constrained container with no GitHub
-release credentials; the test/build container has no network. A second offline, read-only container
+release credentials; the test/build container has no network. Generated-script validator errors,
+which upstream currently logs without failing its build, also block publication. A second offline, read-only container
 loads the built extension in Chrome for Testing 131, checks its popup, Redux
 state and enabled filtering rulesets, and stops and reactivates its MV3 worker.
 The separate

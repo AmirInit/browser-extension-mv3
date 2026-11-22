@@ -22,4 +22,5 @@ node /pipeline/fixtures/tests/performance/reduxBroadcast.bench.cjs | tee .commun
 const fs=require('fs'); const a=fs.readFileSync('.community-ci/benchmark.jsonl','utf8').trim().split('\n').map(JSON.parse)
 for(const n of [100,1000,3000]) { const x=a.find(y=>y.tabCount===n); if(!x || x.tabQueries!==0 || x.tabMessages!==0 || x.runtimeBroadcasts!==21) throw new Error('Redux scaling regression for '+n+' tabs') }
 JS
-yarn build
+yarn build 2>&1 | tee .community-ci/build.log
+node /pipeline/check-build-output.cjs .community-ci/build.log

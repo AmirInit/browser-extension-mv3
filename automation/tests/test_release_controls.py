@@ -135,6 +135,16 @@ class ArtifactTests(unittest.TestCase):
                 z.writestr('../escape', 'x')
             with self.assertRaises(ValueError): validate_zip(file, '4.3.1')
 
+    def test_generated_script_validator_errors_fail_closed(self):
+        script = Path(__file__).resolve().parents[1] / 'check-build-output.cjs'
+        with tempfile.TemporaryDirectory() as root:
+            log = Path(root) / 'build.log'
+            for message in ('Content does not exist', 'Content not embedded correctly', 'File not found:', 'Error reading file '):
+                log.write_text('validator: ' + message + ' example')
+                self.assertNotEqual(subprocess.run(['node', str(script), str(log)], capture_output=True).returncode, 0)
+            log.write_text('Validated embedded files - check build folder too!\n')
+            self.assertEqual(subprocess.run(['node', str(script), str(log)], capture_output=True).returncode, 0)
+
     def test_draft_release_is_verified_from_paginated_list(self):
         script = Path(__file__).resolve().parents[1] / 'verify-release.py'
         with tempfile.TemporaryDirectory() as root:

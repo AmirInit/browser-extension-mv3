@@ -9,9 +9,6 @@ on:
         description: Build a new prerelease even when source and patches are unchanged
         type: boolean
         default: false
-  push:
-    branches:
-      - automation/community-patch-release
 
 permissions: {}
 concurrency:
@@ -150,7 +147,7 @@ jobs:
     needs: [detect, build]
     if: >-
       needs.build.result == 'success' && github.ref == 'refs/heads/public' &&
-      github.repository == 'AmirInit/browser-extension-mv3' && github.event_name != 'push'
+      github.repository == 'AmirInit/browser-extension-mv3'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
