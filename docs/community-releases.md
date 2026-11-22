@@ -15,7 +15,10 @@ The [workflow](../.github/workflows/community-patch-release.yml) runs every
 Monday at 04:31 UTC and can also be started from Actions → **Community patched
 extension** → **Run workflow**, on the `public` branch. It examines Windscribe's
 `public` branch, branch list, tags, exact commit, `package.json`, and
-`src/manifest.json`. A fingerprint covers the source tree except documentation;
+`src/manifest.json`. A newer numeric official tag is selected only if its
+package and manifest versions agree and its commit descends from the selected
+public source; ambiguous tags fail safely. Experimental branch heads are
+reported but are not automatically built. A fingerprint covers the source tree except documentation;
 a changed commit with an unchanged version still triggers a build if the
 fingerprint changes. A complete existing release for the same source and
 patch fingerprint is skipped. Select **force_build** to create a new revision

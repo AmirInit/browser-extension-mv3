@@ -8,11 +8,12 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import relevant_fingerprint, version_ok
-from detect import choose
+from detect import choose, select_official_candidate
 from locations import check_fresh, sanitize
 from artifacts import safe_name, validate_zip
 from prepare import finish_equivalent
@@ -33,6 +34,19 @@ class DetectionTests(unittest.TestCase):
         self.assertEqual(baseline, relevant_fingerprint(tree))
         tree[0]['sha'] = 'd'
         self.assertNotEqual(baseline, relevant_fingerprint(tree))
+
+    def test_numeric_release_tag_must_match_and_descend_from_public(self):
+        public, tagged = 'a' * 40, 'b' * 40
+        tags = [{'name': 'v4.3.2', 'commit': {'sha': tagged}},
+                {'name': 'v4.4.0-beta', 'commit': {'sha': 'c' * 40}}]
+        with patch('detect.file_json', return_value={'version': '4.3.2'}), patch('detect.api', return_value={'status': 'ahead'}):
+            self.assertEqual(select_official_candidate(public, '4.3.1', tags), (tagged, '4.3.2', 'v4.3.2'))
+        with patch('detect.file_json', return_value={'version': '4.3.2'}), patch('detect.api', return_value={'status': 'diverged'}):
+            with self.assertRaises(ValueError): select_official_candidate(public, '4.3.1', tags)
+        with patch('detect.file_json', return_value={'version': '4.3.1'}):
+            with self.assertRaises(ValueError): select_official_candidate(public, '4.3.1', tags)
+        with self.assertRaises(ValueError):
+            select_official_candidate(public, '4.3.1', [{'name': 'v4.4.0', 'commit': {'sha': public}}])
 
     def test_completed_release_is_idempotent_and_changes_increment_revision(self):
         sha = 'a' * 40

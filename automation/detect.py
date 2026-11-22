@@ -79,6 +79,42 @@ def choose(releases, tags, version, upstream, fingerprint, patches, force=False)
             'previous_sha': previous, 'existing_url': already or ''}
 
 
+def version_key(value):
+    parts = [int(x) for x in value.split('.')]
+    return tuple(parts + [0] * (4 - len(parts)))
+
+
+def select_official_candidate(public_sha, public_version, tags):
+    """Prefer a stable numeric tag ahead of public only when both manifests agree."""
+    selected_sha, selected_version, selected_ref = public_sha, public_version, 'public'
+    candidates = []
+    for tag in tags:
+        name = tag.get('name', '')
+        match = re.fullmatch(r'v?(\d+(?:\.\d+){1,3})', name)
+        sha = tag.get('commit', {}).get('sha', '')
+        if match and version_ok(match.group(1)) and is_sha(sha):
+            candidates.append((version_key(match.group(1)), name, match.group(1), sha))
+    for _, name, version, sha in sorted(candidates):
+        if version_key(version) < version_key(selected_version):
+            continue
+        if sha == selected_sha:
+            if version != selected_version:
+                raise ValueError('official tag version disagrees with the selected source: ' + name)
+            continue
+        package = file_json('package.json', sha)
+        manifest = file_json('src/manifest.json', sha)
+        if package.get('version') != version or manifest.get('version') != version:
+            raise ValueError('official numeric tag disagrees with its package/manifest: ' + name)
+        status = api(f'/repos/{OFFICIAL}/compare/{selected_sha}...{sha}').get('status')
+        if status in ('ahead', 'identical'):
+            selected_sha, selected_version, selected_ref = sha, version, name
+        elif status == 'behind' and version_key(version) == version_key(selected_version):
+            continue
+        else:
+            raise ValueError('official tag is not an unambiguous descendant of the selected source: ' + name)
+    return selected_sha, selected_version, selected_ref
+
+
 def main():
     repo = os.environ['GITHUB_REPOSITORY']
     if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repo):
@@ -98,6 +134,7 @@ def main():
     version = pkg.get('version')
     if not version_ok(version) or manifest.get('version') != version:
         raise ValueError('official package/manifest versions are invalid or disagree')
+    head, version, selected_ref = select_official_candidate(head, version, tags)
     tree = api(f'/repos/{OFFICIAL}/git/trees/{head}?recursive=1')
     if tree.get('truncated') or not isinstance(tree.get('tree'), list):
         raise ValueError('official source tree is incomplete')
@@ -109,7 +146,8 @@ def main():
     values = {'upstream_sha': head, 'version': version, 'source_fingerprint': fingerprint,
               'patch_digest': patch_digest(), **choice}
     write_outputs(os.environ['GITHUB_OUTPUT'], values)
-    print('Official default branch: public; commit:', head, 'version:', version)
+    print('Selected official source:', selected_ref, '; commit:', head, '; version:', version)
+    print('Official branches:', json.dumps([{'name': x['name'], 'sha': x['commit']['sha']} for x in branches], ensure_ascii=True))
     print('Branches checked:', len(branches), '; tags checked:', len(tags), '; matching source tags:',
           sum(1 for tag in tags if tag.get('commit', {}).get('sha') == head))
     print('Source fingerprint:', fingerprint, '; build needed:', values['should_build'])
