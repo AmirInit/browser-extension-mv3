@@ -60,7 +60,10 @@ workflow failed.
 
 Dependency installation uses a frozen lockfile and disables lifecycle scripts.
 Upstream build and test code runs in a constrained container with no GitHub
-release credentials; the test/build container has no network. The separate
+release credentials; the test/build container has no network. A second offline, read-only container
+loads the built extension in Chrome for Testing 131, checks its popup, Redux
+state and enabled filtering rulesets, and stops and reactivates its MV3 worker.
+The separate
 publishing job has `contents: write`, does not run candidate code, verifies the
 current run's artifact ID and SHA-256 against GitHub's artifact API, checks the
 archive and manifest, creates a new tag atomically, creates a draft, verifies

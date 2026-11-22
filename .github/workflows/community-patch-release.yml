@@ -119,6 +119,18 @@ jobs:
             --mount "type=bind,src=$GITHUB_WORKSPACE/control/automation,dst=/pipeline,readonly" \
             --workdir /work "$IMAGE" bash /pipeline/test-build-in-sandbox.sh
           sha256sum --check "$RUNNER_TEMP/community-locations.sha256"
+      - name: Smoke-test built MV3 extension and actual worker restart offline
+        run: |
+          docker run --rm --init --network none --user "$(id -u):$(id -g)" --cap-drop ALL \
+            --security-opt no-new-privileges --pids-limit 1024 --memory 4g --cpus 2 --shm-size 512m \
+            --env NODE_PATH=/work/node_modules \
+            --env CHROME_BINARY=/home/pptruser/.cache/puppeteer/chrome/linux-131.0.6778.85/chrome-linux64/chrome \
+            --env "WS_EXPECTED_VERSION=$VERSION" \
+            --mount "type=bind,src=$GITHUB_WORKSPACE/candidate,dst=/work,readonly" \
+            --mount "type=bind,src=$GITHUB_WORKSPACE/control/automation,dst=/pipeline,readonly" \
+            --workdir /work --entrypoint node \
+            ghcr.io/puppeteer/puppeteer@sha256:c948d9c0590714298c5318209d804fba7925e3e77e57024263443aa62ed99847 \
+            /pipeline/browser-smoke.cjs
       - name: Validate manifest, privacy scripts, rulesets, archive, and provenance
         run: |
           python3 control/automation/artifacts.py package "$GITHUB_WORKSPACE/candidate" \
