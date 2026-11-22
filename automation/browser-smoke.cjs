@@ -65,20 +65,27 @@ async function main() {
     const rules = await page.evaluate(() => chrome.declarativeNetRequest.getEnabledRulesets())
     assert.ok(rules.length > 0, 'no filtering rulesets enabled')
 
-    let workerStopped = false
-    browser.on('targetdestroyed', target => { if (target === worker) workerStopped = true })
+    // A stopped extension worker can retain its DevTools target. Observe the
+    // actual MV3 running-status transitions instead of relying on target removal.
+    let stopped = false
+    let restarted = false
     const cdp = await page.createCDPSession()
+    cdp.on('ServiceWorker.workerVersionUpdated', event => {
+      for (const version of event.versions) {
+        if (version.scriptURL !== worker.url()) continue
+        if (version.runningStatus === 'stopped') stopped = true
+        if (stopped && version.runningStatus === 'running') restarted = true
+        if (process.env.WS_SMOKE_DEBUG) console.log('Worker status:', version.runningStatus)
+      }
+    })
     await cdp.send('ServiceWorker.enable')
     await cdp.send('ServiceWorker.stopAllWorkers')
-    await retry(() => workerStopped, 'service-worker shutdown', 15000)
+    await retry(() => stopped, 'service-worker shutdown', 20000)
     await retry(async () => (await page.evaluate(async () => {
       const result = await chrome.runtime.sendMessage({ type: 'chromex.fetch_state', portName: 'WS_BROWSER_EXTENSION_STORE' })
       return !!result && typeof result.payload === 'object' && result.payload !== null
     })), 'Redux state after service-worker restart')
-    await browser.waitForTarget(
-      target => target !== worker && target.type() === 'service_worker' && target.url() === worker.url(),
-      { timeout: 30000 },
-    )
+    await retry(() => restarted, 'service-worker reactivation', 30000)
     console.log(`Offline built-extension smoke passed: MV3 ${manifest.version}, popup and Redux state, ${rules.length} enabled rulesets, worker stopped and reactivated`)
   } finally {
     if (browser) await browser.close()

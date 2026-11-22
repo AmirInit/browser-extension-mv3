@@ -26,7 +26,12 @@ def apply_or_already(source, patch):
 def check_architecture(source):
     allowed = {'src/pages/proxyStore.ts', 'src/state/webExtAdapter.ts', 'src/state/store.ts'}
     uses = set()
-    for path in (source / 'src').rglob('*'):
+    src = source / 'src'
+    if src.is_symlink() or not src.is_dir():
+        raise ValueError('source tree must be a real directory')
+    for path in src.rglob('*'):
+        if path.is_symlink():
+            raise ValueError('source tree contains an unreviewed symlink')
         if path.suffix not in ('.js', '.ts', '.tsx') or not path.is_file():
             continue
         text = path.read_text(encoding='utf8')

@@ -54,7 +54,7 @@ def relevant_fingerprint(tree: list[dict]) -> str:
     rows = []
     for item in tree:
         p = item['path']
-        if item['type'] == 'tree' or p.startswith('docs/') or p.lower().endswith(('.md', '.rst')):
+        if item['type'] == 'tree' or p.startswith('docs/') or ('/' not in p and p.lower().endswith(('.md', '.rst'))):
             continue
         rows.append((p, item['mode'], item['type'], item['sha']))
     if not rows:

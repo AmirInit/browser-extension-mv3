@@ -14,13 +14,24 @@ API = 'https://api.github.com'
 MARKER = re.compile(r'<!-- WSFIX-METADATA (\{[^\r\n]*\}) -->')
 
 
+class GithubRedirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        target = urllib.parse.urlsplit(newurl)
+        if target.scheme != 'https' or target.hostname != 'api.github.com':
+            raise ValueError('GitHub API redirected outside the trusted origin')
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+OPENER = urllib.request.build_opener(GithubRedirects())
+
+
 def api(path: str):
     req = urllib.request.Request(API + path, headers={
         'Accept': 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28',
         'User-Agent': 'windscribe-community-release-check',
         **({'Authorization': 'Bearer ' + os.environ['GH_TOKEN']} if os.getenv('GH_TOKEN') else {}),
     })
-    with urllib.request.urlopen(req, timeout=35) as res:
+    with OPENER.open(req, timeout=35) as res:
         return json.load(res)
 
 

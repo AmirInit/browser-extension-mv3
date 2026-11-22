@@ -31,6 +31,19 @@ def safe_name(name):
     return bool(name) and not name.startswith('/') and '\\' not in name and '\0' not in name and ':' not in name and all(x not in ('', '.', '..') for x in parts)
 
 
+def source_file(root, relative):
+    root = Path(root)
+    target = root / relative
+    current = target
+    while current != root:
+        if current.is_symlink():
+            raise ValueError('source file is behind a symlink: ' + str(relative))
+        current = current.parent
+    if not target.is_file():
+        raise ValueError('missing source file: ' + str(relative))
+    return target
+
+
 def scan_tree(root):
     if root.is_symlink() or not root.is_dir():
         raise ValueError('build root is not a real directory')
@@ -148,10 +161,10 @@ def package(source, out, location_path, audit_path):
     files = scan_tree(build)
     names = set(files) | {'LICENSE-Windscribe.txt', 'LICENSE-uBOL.txt'}
     manifest = json.loads(files['manifest.json'].read_text())
-    if manifest != json.loads((source / 'src/manifest.json').read_text()):
+    if manifest != json.loads(source_file(source, 'src/manifest.json').read_text()):
         raise ValueError('built manifest differs from source manifest')
     policy_check(manifest, data['version'], names)
-    check_generated(names, json.loads(Path(location_path).read_text()), (source / 'useragents.txt').read_text())
+    check_generated(names, json.loads(Path(location_path).read_text()), source_file(source, 'useragents.txt').read_text())
     for item in manifest['declarative_net_request']['rule_resources']:
         parsed = json.loads(files[item['path'].lstrip('/')].read_bytes())
         if not isinstance(parsed, list): raise ValueError('filtering ruleset is not an array')
@@ -159,14 +172,14 @@ def package(source, out, location_path, audit_path):
     if audit.get('counts', {}).get('critical') != 0: raise ValueError('critical dependency finding')
     data['audit_summary'] = audit['counts']
     data['high_advisories'] = audit['high_advisories']
-    data['redux_integration'] = (source / '.community-ci/mode').read_text().strip()
+    data['redux_integration'] = source_file(source, '.community-ci/mode').read_text().strip()
     if data['redux_integration'] not in ('reviewed-patch', 'equivalent-probed'):
         raise ValueError('invalid Redux integration mode')
     data['locations_sha256'] = sha256_file(location_path)
     data['browser_smoke'] = 'offline Chrome for Testing 131.0.6778.85: popup, Redux, rulesets, MV3 worker restart'
     out.mkdir(parents=True, exist_ok=False)
     archive = out / 'windscribe-community.zip'
-    licenses = {'LICENSE-Windscribe.txt': source / 'LICENSE', 'LICENSE-uBOL.txt': source / 'ubo-lite-mirror/LICENSE'}
+    licenses = {'LICENSE-Windscribe.txt': source_file(source, 'LICENSE'), 'LICENSE-uBOL.txt': source_file(source, 'ubo-lite-mirror/LICENSE')}
     for name, path in licenses.items():
         if name in files or path.is_symlink() or not path.is_file(): raise ValueError('license collision or missing license')
         files[name] = path

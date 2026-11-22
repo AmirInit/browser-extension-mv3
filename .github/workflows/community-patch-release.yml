@@ -123,6 +123,7 @@ jobs:
         run: |
           docker run --rm --init --network none --user "$(id -u):$(id -g)" --cap-drop ALL \
             --security-opt no-new-privileges --pids-limit 1024 --memory 4g --cpus 2 --shm-size 512m \
+            --env HOME=/tmp --env XDG_CONFIG_HOME=/tmp/config --env XDG_CACHE_HOME=/tmp/cache \
             --env NODE_PATH=/work/node_modules \
             --env CHROME_BINARY=/home/pptruser/.cache/puppeteer/chrome/linux-131.0.6778.85/chrome-linux64/chrome \
             --env "WS_EXPECTED_VERSION=$VERSION" \

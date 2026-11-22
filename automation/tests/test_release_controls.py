@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import relevant_fingerprint, version_ok
 from detect import choose, select_official_candidate
 from locations import check_fresh, sanitize
-from artifacts import safe_name, validate_zip
+from artifacts import safe_name, source_file, validate_zip
 from prepare import finish_equivalent
 
 
@@ -33,6 +33,8 @@ class DetectionTests(unittest.TestCase):
         tree[1]['sha'] = 'c'
         self.assertEqual(baseline, relevant_fingerprint(tree))
         tree[0]['sha'] = 'd'
+        self.assertNotEqual(baseline, relevant_fingerprint(tree))
+        tree.append({'path': 'src/content.md', 'mode': '100644', 'type': 'blob', 'sha': 'e'})
         self.assertNotEqual(baseline, relevant_fingerprint(tree))
 
     def test_numeric_release_tag_must_match_and_descend_from_public(self):
@@ -122,6 +124,10 @@ class ArtifactTests(unittest.TestCase):
         for path in ('../a', '/etc/passwd', 'a/../b', 'a//b', 'a/./b', 'C:/x', 'a\\b'):
             self.assertFalse(safe_name(path), path)
         self.assertTrue(safe_name('rulesets/main/easylist.json'))
+        with tempfile.TemporaryDirectory() as root:
+            source = Path(root)
+            (source / 'redirect').symlink_to('/etc/passwd')
+            with self.assertRaises(ValueError): source_file(source, 'redirect')
         with tempfile.TemporaryDirectory() as root:
             file = Path(root) / 'bad.zip'
             with zipfile.ZipFile(file, 'w') as z:

@@ -17,6 +17,17 @@ HOSTS = ('assets.windscribe.com', 'assets.totallyacdn.com')
 MAX_AGE = 24 * 60 * 60
 
 
+class LocationRedirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        target = urllib.parse.urlsplit(newurl)
+        if target.scheme != 'https' or target.hostname not in HOSTS:
+            raise ValueError('location source redirected to an untrusted host')
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+OPENER = urllib.request.build_opener(LocationRedirects())
+
+
 def sanitize(obj):
     raw = obj.get('data') if isinstance(obj, dict) else None
     if not isinstance(raw, list) or not raw:
@@ -76,7 +87,7 @@ def check_fresh(headers, now):
 def fetch(host, tier):
     url = f'https://{host}/serverlist/chrome/{tier}/x'
     req = urllib.request.Request(url, headers={'User-Agent': 'windscribe-community-build/1', 'Cache-Control': 'no-cache', 'Pragma': 'no-cache'})
-    with urllib.request.urlopen(req, timeout=25) as response:
+    with OPENER.open(req, timeout=25) as response:
         final = urllib.parse.urlsplit(response.geturl())
         if final.scheme != 'https' or final.hostname not in HOSTS:
             raise ValueError('location source redirected to an untrusted host')
