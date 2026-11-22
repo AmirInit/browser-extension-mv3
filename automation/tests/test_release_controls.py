@@ -15,6 +15,7 @@ from common import relevant_fingerprint, version_ok
 from detect import choose
 from locations import check_fresh, sanitize
 from artifacts import safe_name, validate_zip
+from prepare import finish_equivalent
 
 
 class DetectionTests(unittest.TestCase):
@@ -70,6 +71,36 @@ class LocationTests(unittest.TestCase):
             if change == 'gps': bad['data'][0]['groups'][0]['gps'] = '91,0'
             if change == 'id': bad['data'][0]['id'] = -1
             with self.assertRaises(ValueError): sanitize(bad)
+
+
+class EquivalentIntegrationTests(unittest.TestCase):
+    def test_equivalent_dependency_gets_narrow_location_loader(self):
+        repo = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as root:
+            source = Path(root)
+            (source / 'scripts').mkdir()
+            (source / '.community-ci').mkdir()
+            (source / '.community-ci/mode').write_text('equivalent-probe\n')
+            original = (repo / 'scripts/build.js').read_text()
+            (source / 'scripts/build.js').write_text(original)
+            finish_equivalent(source)
+            updated = (source / 'scripts/build.js').read_text()
+            self.assertIn('process.env.BUILD_LOCATIONS_FILE', updated)
+            self.assertIn('await getLocations(await login())', updated)
+            self.assertTrue((source / 'scripts/loadBuildLocations.js').is_file())
+            self.assertTrue((source / 'tests/unit/buildLocations.community.test.cjs').is_file())
+            self.assertEqual((source / '.community-ci/mode').read_text().strip(), 'equivalent-probed')
+            with self.assertRaises(ValueError): finish_equivalent(source)
+
+    def test_changed_build_script_fails_without_injecting_loader(self):
+        with tempfile.TemporaryDirectory() as root:
+            source = Path(root)
+            (source / 'scripts').mkdir()
+            (source / '.community-ci').mkdir()
+            (source / '.community-ci/mode').write_text('equivalent-probe\n')
+            (source / 'scripts/build.js').write_text('// changed upstream API\n')
+            with self.assertRaises(ValueError): finish_equivalent(source)
+            self.assertFalse((source / 'scripts/loadBuildLocations.js').exists())
 
 
 class ArtifactTests(unittest.TestCase):
